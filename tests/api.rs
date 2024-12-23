@@ -1,6 +1,6 @@
-use std::env;
 use dotenv::dotenv;
 use line_login_api::LineLoginClient;
+use std::env;
 
 #[tokio::test]
 async fn test_example() {
@@ -43,7 +43,6 @@ async fn test_example() {
     };
     println!("{:?}", res);
 }
-
 
 fn client() -> LineLoginClient {
     LineLoginClient::new(get_env("LINE_CLIENT_ID"), get_env("LINE_CLIENT_SECRET"))

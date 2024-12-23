@@ -1,18 +1,18 @@
-mod error;
 mod api;
+mod error;
 
+pub use api::*;
 pub use error::*;
 use reqwest::{Body, Method, RequestBuilder, Url};
 use serde::Serialize;
 use serde_json::{json, Value};
-pub use api::*;
 
 pub struct LineLoginClient {
     pub(crate) context: LineContext,
 }
 
 impl LineLoginClient {
-    pub fn new<T:ToString,S:ToString>(client_id: T, client_secret: S) -> Self {
+    pub fn new<T: ToString, S: ToString>(client_id: T, client_secret: S) -> Self {
         Self {
             context: LineContext {
                 client_id: Some(client_id.to_string()),
@@ -39,16 +39,13 @@ impl LineLoginClient {
     async fn http_response_reqwest<R>(
         response: Result<reqwest::Response, reqwest::Error>,
     ) -> LineApiResponse<R>
-        where
-            R: for<'de> serde::Deserialize<'de>,
+    where
+        R: for<'de> serde::Deserialize<'de>,
     {
-
         let response = match response {
             Ok(v) => v,
             Err(e) => return Err(LineSystemError::new(e.to_string()).into()),
         };
-
-
         let status = response.status();
         let body = match response.bytes().await {
             Ok(v) => v.to_vec(),
@@ -56,17 +53,20 @@ impl LineLoginClient {
                 return Err(LineHttpError::new(status.as_u16(), e.to_string()).into());
             }
         };
-
         let http_response_body = match String::from_utf8(body) {
             Ok(v) => v,
             Err(e) => return Err(LineSystemError::new(e.to_string()).into()),
         };
-
         let value = match serde_json::from_str::<Value>(http_response_body.as_str()) {
             Ok(v) => v,
-            Err(e) => return Err(LineSystemError::new(e.to_string()).into()),
-        };
+            Err(e) => {
+                if status == 200 && http_response_body.as_str().is_empty() {
+                    return Err(LineHttpError::new(status.as_u16(), "".to_string()).into());
+                }
 
+                return Err(LineSystemError::new(e.to_string()).into());
+            }
+        };
         Self::http_response_text(status.as_u16(), http_response_body, value).await
     }
     async fn http_response_text<R>(
@@ -74,8 +74,8 @@ impl LineLoginClient {
         http_response_body: String,
         value: Value,
     ) -> LineApiResponse<R>
-        where
-            R: for<'de> serde::Deserialize<'de>,
+    where
+        R: for<'de> serde::Deserialize<'de>,
     {
         if 400 <= status {
             if let Ok(res) = serde_json::from_value(value.clone()) {
@@ -85,7 +85,7 @@ impl LineLoginClient {
                     warnings: None,
                     http_response_body: Some(http_response_body),
                 }
-                    .into());
+                .into());
             }
         }
 
@@ -99,36 +99,38 @@ impl LineLoginClient {
                         warnings: None,
                         http_response_body: Some(http_response_body),
                     }
-                        .into());
+                    .into());
                 }
                 Err(LineSystemError::new(e.to_string()).into())
             }
         }
     }
-    pub(crate) async fn http_get<P, R>(&self, url: &str, value: &P, access_token: &str) -> LineApiResponse<R>
-        where
-            P: serde::Serialize,
-            R: for<'de> serde::Deserialize<'de>,
+    pub(crate) async fn http_get<P, R>(
+        &self,
+        url: &str,
+        value: &P,
+        access_token: &str,
+    ) -> LineApiResponse<R>
+    where
+        P: serde::Serialize,
+        R: for<'de> serde::Deserialize<'de>,
     {
-        let build = builder2(
-            Url::parse(url).unwrap(),
-            Method::GET,
-            access_token,
-        );
+        let build = builder2(Url::parse(url).unwrap(), Method::GET, access_token);
         let request = build.body(Body::from(json!(value).to_string()));
         LineLoginClient::http_response_reqwest(request.send().await).await
     }
 
-    pub(crate) async fn http_post< P,R>(&self, url: &str, value: P, access_token: &str) -> LineApiResponse<R>
-        where
-            P:Serialize + std::fmt::Debug,
-            R: for<'de> serde::Deserialize<'de>,
+    pub(crate) async fn http_post<P, R>(
+        &self,
+        url: &str,
+        value: P,
+        access_token: &str,
+    ) -> LineApiResponse<R>
+    where
+        P: Serialize + std::fmt::Debug,
+        R: for<'de> serde::Deserialize<'de>,
     {
-        let build = builder2(
-            Url::parse(url).unwrap(),
-            Method::POST,
-            access_token,
-        );
+        let build = builder2(Url::parse(url).unwrap(), Method::POST, access_token);
 
         let request = build.form(&value);
         let res = request.send().await;
@@ -169,8 +171,7 @@ impl LineLoginClient {
 }
 
 fn builder2(url: Url, method: Method, token: &str) -> RequestBuilder {
-    let mut res = reqwest::Client::new()
-        .request(method, url);
+    let mut res = reqwest::Client::new().request(method, url);
     res = res.header("Content-Type", "application/x-www-form-urlencoded");
     if !token.is_empty() {
         res = res.header("Authorization", format!("Bearer {}", token));
